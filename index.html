@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Models · Sports Hub</title>
+<style>
+  :root{
+    --bg:#0c1015; --panel:#11161d; --panel2:#161d26; --hair:#222c38; --hair2:#1a222c;
+    --ink:#e8edf3; --mut:#93a1b0; --mut2:#5f6d7c; --accent:#3ea675; --accent2:#5bd0a0;
+    --sb-w:212px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  html,body{height:100%; margin:0}
+  body{
+    background:var(--bg); color:var(--ink); overflow:hidden;
+    font-family:"Saira","Segoe UI",system-ui,-apple-system,sans-serif;
+    display:grid; grid-template-columns:var(--sb-w) 1fr; height:100dvh;
+  }
+
+  /* ---- Sidebar ---- */
+  .sb{
+    background:linear-gradient(180deg,#10151c 0%,#0d1219 100%);
+    border-right:1px solid var(--hair); display:flex; flex-direction:column;
+    min-height:0; padding:0; z-index:5;
+  }
+  .brand{padding:20px 18px 16px; border-bottom:1px solid var(--hair2)}
+  .brand .t{font-weight:800; font-size:15px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink)}
+  .brand .s{font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--mut2); margin-top:3px}
+  .nav{padding:12px 10px; display:flex; flex-direction:column; gap:4px; flex:1; min-height:0; overflow:auto}
+  .nav-lbl{font-size:9.5px; letter-spacing:.18em; text-transform:uppercase; color:var(--mut2); padding:10px 8px 4px}
+  .item{
+    display:flex; align-items:center; gap:11px; padding:10px 12px; border-radius:9px;
+    color:var(--mut); font-weight:600; font-size:14px; cursor:pointer; border:1px solid transparent;
+    background:transparent; text-align:left; width:100%; transition:background .12s,color .12s,border-color .12s;
+  }
+  .item .ic{font-size:17px; width:22px; text-align:center; filter:grayscale(.2)}
+  .item:hover{background:var(--panel2); color:var(--ink)}
+  .item.on{background:var(--panel2); color:var(--ink); border-color:var(--hair)}
+  .item.on::before{content:""; position:absolute; left:0; width:3px; height:22px; background:var(--accent); border-radius:0 3px 3px 0; margin-left:-13px}
+  .item.on{position:relative}
+  .sb-foot{padding:12px 16px; border-top:1px solid var(--hair2); font-size:10.5px; color:var(--mut2); line-height:1.5}
+  .sb-foot a{color:var(--mut); text-decoration:none}
+
+  /* ---- Stage ---- */
+  .stage{position:relative; min-width:0; background:var(--bg)}
+  .frame{position:absolute; inset:0; width:100%; height:100%; border:0; background:var(--bg); opacity:0; transition:opacity .2s}
+  .frame.show{opacity:1}
+  .load{
+    position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:14px; background:var(--bg); color:var(--mut); font-size:13px; letter-spacing:.03em; z-index:2;
+    transition:opacity .25s; pointer-events:none;
+  }
+  .load.hide{opacity:0}
+  .spin{width:26px; height:26px; border:2.5px solid var(--hair); border-top-color:var(--accent); border-radius:50%; animation:sp .7s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .err{max-width:420px; text-align:center; line-height:1.55; color:var(--mut); font-size:12.5px; display:none; padding:0 24px}
+  .err code{background:var(--panel2); padding:1px 6px; border-radius:4px; color:var(--accent2); font-size:11.5px}
+
+  /* ---- Mobile: sidebar becomes a top bar ---- */
+  .topbar{display:none}
+  @media (max-width:720px){
+    body{grid-template-columns:1fr; grid-template-rows:auto 1fr}
+    .sb{display:none}
+    .topbar{
+      display:flex; align-items:center; gap:8px; padding:8px 12px calc(8px + env(safe-area-inset-top,0));
+      background:#10151c; border-bottom:1px solid var(--hair); overflow-x:auto; z-index:5;
+    }
+    .topbar .tb-brand{font-weight:800; font-size:12px; letter-spacing:.1em; text-transform:uppercase; color:var(--mut); margin-right:6px; white-space:nowrap}
+    .topbar .item{width:auto; padding:8px 13px; font-size:13px; white-space:nowrap}
+    .topbar .item.on::before{display:none}
+    .topbar .item .ic{display:none}
+  }
+</style>
+</head>
+<body>
+  <!-- Desktop sidebar -->
+  <aside class="sb">
+    <div class="brand">
+      <div class="t">Models</div>
+      <div class="s">Betting &amp; Analytics</div>
+    </div>
+    <nav class="nav" id="nav">
+      <div class="nav-lbl">Sports</div>
+      <!-- items injected -->
+    </nav>
+    <div class="sb-foot">
+      Model &amp; form are decision support,<br>not advice.
+    </div>
+  </aside>
+
+  <!-- Mobile top bar -->
+  <div class="topbar" id="topbar">
+    <span class="tb-brand">Models</span>
+    <!-- items injected -->
+  </div>
+
+  <!-- Stage -->
+  <main class="stage">
+    <iframe id="frame" class="frame" title="tool" allow="clipboard-read; clipboard-write"></iframe>
+    <div class="load" id="load">
+      <div class="spin"></div>
+      <div id="loadTxt">Loading…</div>
+      <div class="err" id="err">
+        Couldn't load this tool. If the frame stays blank, the site URL is probably off &mdash;
+        fix it in the <code>TOOLS</code> config at the top of this file.
+      </div>
+    </div>
+  </main>
+
+<script>
+/* ============================================================
+   CONFIG — the only thing you edit.
+   Point each sport at its own live GitHub Pages URL.
+   Add baseball / golf here later once those tools exist:
+     bb:{ name:'MLB', icon:'\u26be', url:'https://.../mlb/' }
+   IMPORTANT: host THIS hub at a URL that is NOT one of the tool
+   URLs below, or a frame will try to load itself (blank/loop).
+   ============================================================ */
+const TOOLS = {
+  wc:  { name:'World Cup 2026', icon:'\u26bd', url:'https://cheesedagg.github.io/world-cup-2026-/' },
+  ufc: { name:'UFC',            icon:'\uD83E\uDD4A', url:'https://cheesedagg.github.io/UFC-ODDS/' },
+  mlb: { name:'MLB',            icon:'\u26be', url:'' },   // paste the Pages URL after deploying mlb-repo (e.g. https://cheesedagg.github.io/mlb-tool/mlb/)
+  nfl: { name:'NFL',            icon:'\uD83C\uDFC8', url:'' },   // paste the Pages URL after deploying nfl-repo (e.g. https://cheesedagg.github.io/nfl-tool/nfl/)
+};
+const DEFAULT = 'wc';
+/* ============================================================ */
+
+const frame = document.getElementById('frame');
+const load  = document.getElementById('load');
+const loadTxt = document.getElementById('loadTxt');
+const err   = document.getElementById('err');
+let current = null, errTimer = null;
+
+function buildNav(){
+  const nav = document.getElementById('nav');
+  const tb  = document.getElementById('topbar');
+  Object.entries(TOOLS).forEach(([key,t])=>{
+    for(const host of [nav, tb]){
+      const b = document.createElement('button');
+      b.className = 'item';
+      b.dataset.key = key;
+      b.innerHTML = '<span class="ic">'+t.icon+'</span><span>'+t.name+'</span>';
+      b.onclick = ()=>{ location.hash = key; };
+      host.appendChild(b);
+    }
+  });
+}
+
+function select(key){
+  if(!TOOLS[key]) key = DEFAULT;
+  if(key === current) return;
+  current = key;
+
+  // active states
+  document.querySelectorAll('.item').forEach(el=>{
+    el.classList.toggle('on', el.dataset.key === key);
+  });
+
+  // show loader, swap frame
+  err.style.display = 'none';
+  loadTxt.textContent = 'Loading ' + TOOLS[key].name + '…';
+  load.classList.remove('hide');
+  frame.classList.remove('show');
+
+  clearTimeout(errTimer);
+  // if it hasn't loaded in a while, surface the "check the URL" hint
+  errTimer = setTimeout(()=>{ err.style.display = 'block'; }, 6000);
+
+  if(!TOOLS[key].url){
+    frame.removeAttribute('src'); frame.style.display='none';
+    loadTxt.innerHTML = TOOLS[key].name + ' isn\u2019t deployed yet.<br><span style="font-size:12px;opacity:.75">Push its repo, enable Pages, then paste the URL into the TOOLS config at the top of this file \u2014 the tab lights up on its own.</span>';
+  } else { frame.style.display=''; frame.src = TOOLS[key].url; }
+  document.title = TOOLS[key].name + ' · Models';
+}
+
+frame.addEventListener('load', ()=>{
+  // fires on successful frame load (same- or cross-origin)
+  clearTimeout(errTimer);
+  load.classList.add('hide');
+  frame.classList.add('show');
+});
+
+function route(){
+  const key = (location.hash || '').replace('#','');
+  select(TOOLS[key] ? key : DEFAULT);
+}
+
+buildNav();
+window.addEventListener('hashchange', route);
+route();
+</script>
+</body>
+</html>
