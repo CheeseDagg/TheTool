@@ -34,7 +34,8 @@
     color:var(--mut); font-weight:600; font-size:14px; cursor:pointer; border:1px solid transparent;
     background:transparent; text-align:left; width:100%; transition:background .12s,color .12s,border-color .12s;
   }
-  .item .ic{font-size:17px; width:22px; text-align:center; filter:grayscale(.2)}
+  .item .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#39424e;margin-left:7px;vertical-align:middle}
+.ic{font-size:17px; width:22px; text-align:center; filter:grayscale(.2)}
   .item:hover{background:var(--panel2); color:var(--ink)}
   .item.on{background:var(--panel2); color:var(--ink); border-color:var(--hair)}
   .item.on::before{content:""; position:absolute; left:0; width:3px; height:22px; background:var(--accent); border-radius:0 3px 3px 0; margin-left:-13px}
@@ -125,6 +126,12 @@ nfl: { name:'NFL',              icon:'\uD83C\uDFC8', url:'https://cheesedagg.git
   soc: { name:'Soccer',           icon:'\u26BD', url:'https://cheesedagg.github.io/SoccerTool/' },
 };
 const DEFAULT = 'wc';
+// freshness: same-origin slate timestamps -> green <30h, amber <60h, red after
+const FRESH = {
+  mlb: '/MLBTool/mlb/data/slate.json',
+  nfl: '/NFLTool/data/slate.json',
+  soc: '/SoccerTool/data/slate.json',
+};
 /* ============================================================ */
 
 const frame = document.getElementById('frame');
@@ -141,10 +148,20 @@ function buildNav(){
       const b = document.createElement('button');
       b.className = 'item';
       b.dataset.key = key;
-      b.innerHTML = '<span class="ic">'+t.icon+'</span><span>'+t.name+'</span>';
+      b.innerHTML = '<span class="ic">'+t.icon+'</span><span>'+t.name+'</span>'+
+        (FRESH[key]?'<span class="dot" data-dot="'+key+'" title="checking freshness…"></span>':'');
       b.onclick = ()=>{ location.hash = key; };
       host.appendChild(b);
     }
+  });
+  Object.entries(FRESH).forEach(([key,u])=>{
+    fetch(u,{cache:'no-store'}).then(r=>r.json()).then(d=>{
+      const h=(Date.now()-new Date(d.generated).getTime())/36e5;
+      const c=h<30?'#4ad6a2':(h<60?'#e8b44a':'#e06c75');
+      document.querySelectorAll('[data-dot="'+key+'"]').forEach(el=>{
+        el.style.background=c; el.title='updated '+Math.round(h)+'h ago';
+      });
+    }).catch(()=>{});
   });
 }
 
