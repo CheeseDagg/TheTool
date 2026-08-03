@@ -126,11 +126,36 @@ nfl: { name:'NFL',              icon:'\uD83C\uDFC8', url:'https://cheesedagg.git
   soc: { name:'Soccer',           icon:'\u26BD', url:'https://cheesedagg.github.io/SoccerTool/' },
 };
 const DEFAULT = 'wc';
-// freshness: same-origin slate timestamps -> green <30h, amber <60h, red after
+
+/* FRESHNESS.
+   The dot is the only thing on this hub that can tell you a tool is showing you
+   last week's numbers, so its failure mode matters more than its success case.
+   Three things were wrong with the previous version:
+
+     1. Only mlb and nfl had a dot at all. Soccer publishes data/slate.json with
+        the same `generated` field and had none, so a stale soccer board looked
+        exactly like a fresh one.
+     2. `.catch(()=>{})` meant a failed fetch left the dot grey with the tooltip
+        still reading "checking freshness…" — forever. A staleness indicator
+        whose failure mode is to say nothing is worse than no indicator, because
+        it reads as reassurance.
+     3. A missing or unparseable `generated` gave NaN hours, which fell through
+        both comparisons to red. Red means "old". "I could not tell" is a
+        different statement and has to look different.
+
+   Tools with no published timestamp get `null` and no dot, which is honest:
+   world-cup-2026- is a static page with no feed behind it, so a Last-Modified
+   date on the HTML would show permanent red for a page that is not stale.
+   Every path is same-origin (all five tools are repos under the same
+   github.io user site), so these are plain fetches with no CORS involved. */
 const FRESH = {
-  mlb: '/MLBTool/mlb/data/slate.json',
-  nfl: '/NFLTool/data/slate.json',
+  mlb: { url:'/MLBTool/mlb/data/slate.json', field:'generated' },
+  nfl: { url:'/NFLTool/data/slate.json',     field:'generated' },
+  soc: { url:'/SoccerTool/data/slate.json',  field:'generated' },
+  wc:  null,   // static page, no feed
+  ufc: null,   // data is inlined at build time; no timestamp published yet
 };
+const FRESH_OK = 30, FRESH_WARN = 60;   // hours
 /* ============================================================ */
 
 const frame = document.getElementById('frame');
@@ -149,24 +174,45 @@ function buildNav(){
       b.dataset.key = key;
       b.innerHTML = '<span class="ic">'+t.icon+'</span><span>'+t.name+'</span>'+
         (FRESH[key]?'<span class="dot" data-dot="'+key+'" title="checking freshness…"></span>':'');
-      b.onclick = ()=>{ location.hash = key; };
+      b.onclick = ()=>{
+        if(location.hash.replace('#','') === key) select(key, true);
+        else location.hash = key;
+      };
       host.appendChild(b);
     }
   });
-  Object.entries(FRESH).forEach(([key,u])=>{
-    fetch(u,{cache:'no-store'}).then(r=>r.json()).then(d=>{
-      const h=(Date.now()-new Date(d.generated).getTime())/36e5;
-      const c=h<30?'#4ad6a2':(h<60?'#e8b44a':'#e06c75');
-      document.querySelectorAll('[data-dot="'+key+'"]').forEach(el=>{
-        el.style.background=c; el.title='updated '+Math.round(h)+'h ago';
-      });
-    }).catch(()=>{});
+
+  const paint = (key, colour, title) =>
+    document.querySelectorAll('[data-dot="'+key+'"]').forEach(el=>{
+      el.style.background = colour; el.title = title;
+    });
+
+  Object.entries(FRESH).forEach(([key, spec])=>{
+    if(!spec) return;
+    fetch(spec.url, {cache:'no-store'})
+      .then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+      .then(d=>{
+        const raw = d[spec.field];
+        const ms  = raw ? new Date(raw).getTime() : NaN;
+        // An unreadable timestamp is NOT the same as an old one. Say so.
+        if(!isFinite(ms)) return paint(key, '#6b5bd0',
+          'freshness unknown: '+spec.url+' has no readable "'+spec.field+'"');
+        const h = (Date.now() - ms) / 36e5;
+        const c = h < FRESH_OK ? '#4ad6a2' : (h < FRESH_WARN ? '#e8b44a' : '#e06c75');
+        paint(key, c, 'updated ' + (h < 1 ? Math.round(h*60)+'m' : Math.round(h)+'h') +
+                     ' ago (' + raw + ')');
+      })
+      .catch(e=>paint(key, '#6b5bd0',
+        'freshness unknown: could not read '+spec.url+' ('+e.message+')'));
   });
 }
 
-function select(key){
+function select(key, force){
   if(!TOOLS[key]) key = DEFAULT;
-  if(key === current) return;
+  // Re-selecting the active tool used to be a no-op. On a board that is
+  // regenerated during the day that is the one thing you most want to do, so
+  // clicking the tab you are already on reloads the frame.
+  if(key === current && !force) return;
   current = key;
 
   // active states
@@ -187,7 +233,25 @@ function select(key){
   if(!TOOLS[key].url){
     frame.removeAttribute('src'); frame.style.display='none';
     loadTxt.innerHTML = TOOLS[key].name + ' isn\u2019t deployed yet.<br><span style="font-size:12px;opacity:.75">Push its repo, enable Pages, then paste the URL into the TOOLS config at the top of this file \u2014 the tab lights up on its own.</span>';
-  } else { frame.style.display=''; frame.src = TOOLS[key].url; }
+  } else {
+    frame.style.display='';
+    // Cache-bust the frame. Pages sets a 10-minute cache on HTML, and the tools
+    // regenerate more often than that; without this a reload can hand back the
+    // same document that is already on screen.
+    frame.src = TOOLS[key].url + (TOOLS[key].url.includes('?') ? '&' : '?')
+                + 'r=' + Date.now();
+    // A 404 still fires the frame's `load` event, so the loader hides and the
+    // user is left staring at GitHub's Not Found page inside the frame with no
+    // explanation. Same-origin, so a HEAD tells us for real.
+    const want = key;
+    fetch(TOOLS[key].url, {method:'HEAD', cache:'no-store'})
+      .then(r=>{ if(!r.ok && current === want){
+        clearTimeout(errTimer);
+        loadTxt.textContent = TOOLS[want].name + ' returned HTTP ' + r.status;
+        load.classList.remove('hide'); err.style.display = 'block';
+      }})
+      .catch(()=>{});
+  }
   document.title = TOOLS[key].name + ' · Models';
 }
 
