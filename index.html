@@ -153,7 +153,16 @@ const FRESH = {
   nfl: { url:'/NFLTool/data/slate.json',     field:'generated' },
   soc: { url:'/SoccerTool/data/slate.json',  field:'generated' },
   wc:  null,   // static page, no feed
-  ufc: null,   // data is inlined at build time; no timestamp published yet
+  /* UFC does publish a build timestamp -- it just isn't in the widget payload.
+     The ratings and the card are inlined into a 2.9MB index.html at build time, so
+     there is no slate.json to read, and this entry sat at null on the assumption
+     that meant no timestamp existed. It does: refresh_odds.py stamps
+     docs/status.json with odds_asof BEFORE every rebuild (and build_site.py writes
+     the same field on a home build), and docs/ is exactly what Pages serves. The
+     one tool whose staleness is hardest to see from the page itself -- an inlined
+     board looks identical whether it was built this morning or three cards ago --
+     was the one tool with the dot switched off. */
+  ufc: { url:'/UFC-ODDS/status.json',        field:'odds_asof' },
 };
 const FRESH_OK = 30, FRESH_WARN = 60;   // hours
 /* ============================================================ */
