@@ -124,6 +124,11 @@ const TOOLS = {
  mlb: { name:'MLB',            icon:'\u26be', url:'https://cheesedagg.github.io/MLBTool/mlb/' },
 nfl: { name:'NFL',              icon:'\uD83C\uDFC8', url:'https://cheesedagg.github.io/NFLTool/' },
   soc: { name:'Soccer',           icon:'\u26BD', url:'https://cheesedagg.github.io/SoccerTool/' },
+  /* Parlay lives in THIS repo (parlay.html beside this file), so the URL is
+     relative \u2014 it follows the hub to whatever domain serves it. The page pulls
+     BOARD.md and TICKETS.md off CheeseDagg/parlay@main at view time, so the
+     refresh workflow's commit is the publish step; there is no other. */
+  par: { name:'Parlay',           icon:'\uD83C\uDFAB', url:'parlay.html' },
 };
 const DEFAULT = 'wc';
 
@@ -163,8 +168,19 @@ const FRESH = {
      board looks identical whether it was built this morning or three cards ago --
      was the one tool with the dot switched off. */
   ufc: { url:'/UFC-ODDS/status.json',        field:'odds_asof' },
+  /* Markdown, not JSON: no `field` means "read the text and take the first
+     YYYY-MM-DD HH:MM UTC in it", which BOARD.md carries in its H1. The one
+     exception to "every path is same-origin" above — raw.githubusercontent.com
+     sends Access-Control-Allow-Origin:*, so the cross-origin fetch is fine.
+     Per-tool thresholds: the board refreshes at 16:00 & 21:00 UTC, so green
+     under 12h. Mind the arithmetic though: the overnight gap (21:00 -> 16:00)
+     is 19h, so the dot reads amber through most mornings ET even when every
+     run succeeded — that is the schedule working, not a failure. Red from 24h
+     means both of today's runs missed. */
+  par: { url:'https://raw.githubusercontent.com/CheeseDagg/parlay/main/BOARD.md',
+         ok:12, warn:24 },
 };
-const FRESH_OK = 30, FRESH_WARN = 60;   // hours
+const FRESH_OK = 30, FRESH_WARN = 60;   // hours; a spec's ok/warn override these per-tool
 /* ============================================================ */
 
 const frame = document.getElementById('frame');
@@ -198,16 +214,27 @@ function buildNav(){
 
   Object.entries(FRESH).forEach(([key, spec])=>{
     if(!spec) return;
+    const okH = spec.ok || FRESH_OK, warnH = spec.warn || FRESH_WARN;
     fetch(spec.url, {cache:'no-store'})
-      .then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+      .then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return spec.field ? r.json() : r.text(); })
       .then(d=>{
-        const raw = d[spec.field];
-        const ms  = raw ? new Date(raw).getTime() : NaN;
+        let raw, ms;
+        if(spec.field){
+          raw = d[spec.field];
+          ms  = raw ? new Date(raw).getTime() : NaN;
+        } else {
+          // Text mode: first "YYYY-MM-DD HH:MM UTC" in the file. Rebuilt as an
+          // ISO string by hand because Safari won't parse the raw form.
+          const m = /(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}) UTC/.exec(d);
+          raw = m ? m[1]+' '+m[2]+' UTC' : null;
+          ms  = m ? Date.parse(m[1]+'T'+m[2]+':00Z') : NaN;
+        }
         // An unreadable timestamp is NOT the same as an old one. Say so.
         if(!isFinite(ms)) return paint(key, '#6b5bd0',
-          'freshness unknown: '+spec.url+' has no readable "'+spec.field+'"');
+          'freshness unknown: '+spec.url+' has no readable '+
+          (spec.field ? '"'+spec.field+'"' : '"YYYY-MM-DD HH:MM UTC" stamp'));
         const h = (Date.now() - ms) / 36e5;
-        const c = h < FRESH_OK ? '#4ad6a2' : (h < FRESH_WARN ? '#e8b44a' : '#e06c75');
+        const c = h < okH ? '#4ad6a2' : (h < warnH ? '#e8b44a' : '#e06c75');
         paint(key, c, 'updated ' + (h < 1 ? Math.round(h*60)+'m' : Math.round(h)+'h') +
                      ' ago (' + raw + ')');
       })

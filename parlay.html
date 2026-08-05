@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Parlay · Board &amp; Slips</title>
+<style>
+  /* Same palette as the hub (index.html) — keep the two in sync by hand. */
+  :root{
+    --bg:#0c1015; --panel:#11161d; --panel2:#161d26; --hair:#222c38; --hair2:#1a222c;
+    --ink:#e8edf3; --mut:#93a1b0; --mut2:#5f6d7c; --accent:#3ea675; --accent2:#5bd0a0;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:"Saira","Segoe UI",system-ui,-apple-system,sans-serif;
+    -webkit-overflow-scrolling:touch;
+  }
+  .wrap{max-width:900px; margin:0 auto; padding:16px 16px calc(30px + env(safe-area-inset-bottom,0))}
+
+  .hd{display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+  .hd .t{font-weight:800; font-size:14px; letter-spacing:.14em; text-transform:uppercase}
+  .chip{
+    display:inline-flex; align-items:center; gap:7px; background:var(--panel);
+    border:1px solid var(--hair); border-radius:999px; padding:5px 11px;
+    font-size:11.5px; color:var(--mut); white-space:nowrap;
+  }
+  .chip .dot{width:8px; height:8px; border-radius:50%; background:#39424e; flex:none}
+  .btn{
+    background:var(--panel); border:1px solid var(--hair); border-radius:999px;
+    color:var(--mut); font-size:13px; padding:4px 12px; cursor:pointer; line-height:1.4;
+  }
+  .btn:hover{color:var(--ink); background:var(--panel2)}
+
+  .tabs{display:flex; gap:6px; margin:12px 0 14px}
+  .tab{
+    padding:8px 15px; border-radius:9px; border:1px solid transparent; background:transparent;
+    color:var(--mut); font-weight:600; font-size:13px; cursor:pointer;
+  }
+  .tab:hover{background:var(--panel2); color:var(--ink)}
+  .tab.on{background:var(--panel2); color:var(--ink); border-color:var(--hair)}
+  .pane{display:none}
+  .pane.on{display:block}
+
+  /* ---- rendered markdown ---- */
+  .md h1{font-size:16.5px; margin:14px 0 8px}
+  .md h2{font-size:14.5px; margin:22px 0 8px; padding-top:14px; border-top:1px solid var(--hair2)}
+  .md h3{font-size:13px; color:var(--accent2); margin:18px 0 6px; letter-spacing:.02em}
+  .md p{color:var(--mut); font-size:13px; line-height:1.6; margin:8px 0}
+  .md strong{color:var(--ink)}
+  .md code{background:var(--panel2); padding:1px 6px; border-radius:4px; color:var(--accent2); font-size:12px}
+  .md hr{border:0; border-top:1px solid var(--hair); margin:16px 0}
+  .md .tblwrap{overflow-x:auto; border:1px solid var(--hair); border-radius:10px; margin:10px 0}
+  .md table{border-collapse:collapse; width:100%; font-size:12.5px; min-width:540px}
+  .md th{
+    text-align:left; padding:7px 10px; background:var(--panel2); color:var(--mut);
+    font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; border-bottom:1px solid var(--hair);
+  }
+  .md td{padding:6px 10px; border-bottom:1px solid var(--hair2); white-space:nowrap}
+  .md tbody tr:last-child td{border-bottom:0}
+  .md pre{
+    background:var(--panel); border:1px solid var(--hair); border-radius:10px;
+    padding:12px 13px; overflow-x:auto; margin:10px 0;
+    font:11.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; color:var(--ink);
+  }
+  .md ul{list-style:none; margin:8px 0; padding:0}
+  .md li{position:relative; padding:6px 0 6px 26px; font-size:13px; border-bottom:1px solid var(--hair2)}
+  .md li:last-child{border-bottom:0}
+  .md li.plain{padding-left:16px}
+  .md li.plain::before{content:"·"; position:absolute; left:2px; color:var(--mut2)}
+  .md li .cb{
+    position:absolute; left:2px; top:7px; width:15px; height:15px; border:1.5px solid var(--mut2);
+    border-radius:4px; text-align:center; line-height:13px; font-size:11px;
+  }
+  .md li.done .cb{background:var(--accent); border-color:var(--accent); color:#08110c}
+  .md li.done{color:var(--mut)}
+
+  .loading{color:var(--mut); font-size:13px; display:flex; align-items:center; gap:10px; padding:18px 0}
+  .spin{width:18px; height:18px; border:2.5px solid var(--hair); border-top-color:var(--accent); border-radius:50%; animation:sp .7s linear infinite; flex:none}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .errbox{
+    border:1px solid #5a3b3f; background:#1a1216; color:#e0a1a8; padding:12px 14px;
+    border-radius:10px; font-size:12.5px; line-height:1.6; margin:10px 0; overflow-wrap:anywhere;
+  }
+  .errbox code{background:#241a1e; color:#e8c2c7; padding:1px 6px; border-radius:4px; font-size:11.5px}
+  .foot{margin-top:24px; color:var(--mut2); font-size:10.5px; line-height:1.6}
+  .foot code{background:var(--panel2); padding:1px 5px; border-radius:4px; font-size:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hd">
+    <div class="t">Parlay</div>
+    <span class="chip" id="chip"><span class="dot" id="cdot"></span><span id="ctext">checking board age…</span></span>
+    <button class="btn" id="refresh" aria-label="refetch from the repo" title="refetch from the repo">&#8635;</button>
+  </div>
+  <div class="tabs">
+    <button class="tab on" data-pane="board">Board</button>
+    <button class="tab" data-pane="slips">Slips</button>
+  </div>
+  <section id="board" class="pane md on"></section>
+  <section id="slips" class="pane md"></section>
+  <div class="foot">
+    Rendered straight off <code>CheeseDagg/parlay@main</code> (BOARD.md &amp; TICKETS.md) — the refresh
+    workflow's commit is the publish step, there is no other. Board self-refreshes 16:00 &amp; 21:00 UTC.
+    Prices move: check the FD app before placing anything. <span id="fetchedAt"></span>
+  </div>
+</div>
+
+<script>
+/* Everything testable lives on P, DOM-free, so selftest-parlay.js can drive it
+   headless the same way selftest.js drives the hub. init() is the only part
+   that touches the document, and it bails when there isn't one. */
+const P = {
+  RAW: 'https://raw.githubusercontent.com/CheeseDagg/parlay/main/',
+  /* Same numbers as the hub dot (FRESH.par in index.html) — two indicators
+     disagreeing about the same file is worse than either being wrong. */
+  OK_H: 12, WARN_H: 24,
+
+  /* First "YYYY-MM-DD HH:MM UTC" in the text — BOARD.md carries it in its H1.
+     Rebuilt as an ISO string by hand because Safari won't parse the raw form,
+     and the phone is where this page mostly gets read. */
+  stamp(text){
+    const m = /(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}) UTC/.exec(text || '');
+    if(!m) return null;
+    return { ms: Date.parse(m[1] + 'T' + m[2] + ':00Z'), label: m[1] + ' ' + m[2] + ' UTC' };
+  },
+  colour(h){ return h < P.OK_H ? '#4ad6a2' : (h < P.WARN_H ? '#e8b44a' : '#e06c75'); },
+  age(h){ return h < 1 ? Math.round(h*60) + 'm' : Math.round(h) + 'h'; },
+
+  esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); },
+  inline(s){
+    return P.esc(s)
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/`([^`]+)`/g, '<code>$1</code>');
+  },
+
+  /* The exact subset BOARD.md and TICKETS.md are written in — headings, one
+     pipe table, fenced solver output, checkbox lists, bold, hr — nothing more.
+     Everything is HTML-escaped before any markup is added. */
+  render(md){
+    const out = []; let para = [], list = [], table = [], fence = null;
+    const flushP = () => { if(para.length){ out.push('<p>' + P.inline(para.join(' ')) + '</p>'); para = []; } };
+    const flushL = () => { if(list.length){ out.push('<ul>' + list.join('') + '</ul>'); list = []; } };
+    const flushT = () => {
+      if(!table.length) return;
+      const rows = table.map(l => l.replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim()));
+      let hdr = null, body = rows;
+      if(rows.length > 1 && /^\|[\s\-:|]+\|?$/.test(table[1])){ hdr = rows[0]; body = rows.slice(2); }
+      let h = '<div class="tblwrap"><table>';
+      if(hdr) h += '<thead><tr>' + hdr.map(c => '<th>' + P.inline(c) + '</th>').join('') + '</tr></thead>';
+      h += '<tbody>' + body.map(r => '<tr>' + r.map(c => '<td>' + P.inline(c) + '</td>').join('') + '</tr>').join('') +
+           '</tbody></table></div>';
+      out.push(h); table = [];
+    };
+    const flush = () => { flushP(); flushL(); flushT(); };
+
+    for(const line of (md || '').split(/\r?\n/)){
+      if(fence !== null){
+        if(/^```/.test(line)){ out.push('<pre>' + P.esc(fence.join('\n')) + '</pre>'); fence = null; }
+        else fence.push(line);
+        continue;
+      }
+      if(/^```/.test(line)){ flush(); fence = []; continue; }
+      if(/^\|/.test(line.trim())){ flushP(); flushL(); table.push(line.trim()); continue; }
+      flushT();
+      const h = /^(#{1,3}) (.*)$/.exec(line);
+      if(h){ flush(); out.push('<h' + h[1].length + '>' + P.inline(h[2]) + '</h' + h[1].length + '>'); continue; }
+      if(/^\s*---+\s*$/.test(line)){ flush(); out.push('<hr>'); continue; }
+      const cb = /^- \[( |x|X)\] (.*)$/.exec(line);
+      if(cb){
+        flushP();
+        const done = cb[1].toLowerCase() === 'x';
+        list.push('<li class="' + (done ? 'done' : 'todo') + '"><span class="cb">' + (done ? '✓' : '') +
+                  '</span>' + P.inline(cb[2]) + '</li>');
+        continue;
+      }
+      const li = /^- (.*)$/.exec(line);
+      if(li){ flushP(); list.push('<li class="plain">' + P.inline(li[1]) + '</li>'); continue; }
+      if(!line.trim()){ flush(); continue; }
+      flushL(); para.push(line.trim());
+    }
+    if(fence !== null) out.push('<pre>' + P.esc(fence.join('\n')) + '</pre>');
+    flush();
+    return out.join('\n');
+  },
+
+  errBox(name, e){
+    return '<div class="errbox">Couldn’t load <code>' + name + '</code> from the parlay repo (' +
+           P.esc(e.message) + '). The raw URL is <code>' + P.RAW + name + '</code> — if the repo or ' +
+           'branch moved, fix <code>P.RAW</code> at the top of parlay.html.</div>';
+  },
+
+  load(){
+    const board = document.getElementById('board'), slips = document.getElementById('slips'),
+          dot = document.getElementById('cdot'), ctext = document.getElementById('ctext'),
+          chip = document.getElementById('chip'), foot = document.getElementById('fetchedAt');
+    /* raw.githubusercontent's CDN keys on the full URL, so a throwaway query
+       skips its ~5-minute cache and this really is the latest commit. */
+    const bust = '?r=' + Date.now();
+    const get = n => fetch(P.RAW + n + bust, {cache:'no-store'})
+      .then(r => { if(!r.ok) throw new Error('HTTP ' + r.status); return r.text(); });
+    const spinner = '<div class="loading"><span class="spin"></span>Loading…</div>';
+    board.innerHTML = spinner; slips.innerHTML = spinner;
+
+    get('BOARD.md').then(t => {
+      board.innerHTML = P.render(t);
+      const s = P.stamp(t);
+      if(s){
+        const h = (Date.now() - s.ms) / 36e5;
+        dot.style.background = P.colour(h);
+        ctext.textContent = 'board ' + P.age(h) + ' old · ' + s.label;
+        chip.title = 'refreshes 16:00 & 21:00 UTC · green under ' + P.OK_H + 'h, red from ' + P.WARN_H + 'h';
+      } else {
+        /* Unknown is its own state, same rule as the hub dot. */
+        dot.style.background = '#6b5bd0';
+        ctext.textContent = 'board age unknown — no timestamp in BOARD.md';
+      }
+    }).catch(e => {
+      board.innerHTML = P.errBox('BOARD.md', e);
+      dot.style.background = '#6b5bd0';
+      ctext.textContent = 'board unreachable';
+    });
+
+    get('TICKETS.md').then(t => { slips.innerHTML = P.render(t); })
+      .catch(e => { slips.innerHTML = P.errBox('TICKETS.md', e); });
+
+    foot.textContent = 'fetched ' + new Date().toUTCString().replace('GMT', 'UTC');
+  },
+
+  show(k){
+    if(k !== 'slips') k = 'board';
+    document.querySelectorAll('.tab').forEach(el => el.classList.toggle('on', el.dataset.pane === k));
+    document.querySelectorAll('.pane').forEach(el => el.classList.toggle('on', el.id === k));
+  },
+
+  init(){
+    if(typeof document === 'undefined' || !document.getElementById('board')) return;
+    document.querySelectorAll('.tab').forEach(b => {
+      b.onclick = () => { location.hash = b.dataset.pane; P.show(b.dataset.pane); };
+    });
+    window.addEventListener('hashchange', () => P.show((location.hash || '').replace('#','')));
+    document.getElementById('refresh').onclick = () => P.load();
+    P.show((location.hash || '').replace('#',''));
+    P.load();
+  },
+};
+P.init();
+</script>
+</body>
+</html>
