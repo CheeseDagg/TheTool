@@ -75,6 +75,27 @@
   .md li.done .cb{background:var(--accent); border-color:var(--accent); color:#08110c}
   .md li.done{color:var(--mut)}
 
+  /* ---- live grading ---- */
+  .slipband{
+    display:flex; align-items:center; gap:9px; margin:16px 0 6px; padding:9px 12px;
+    background:var(--panel); border:1px solid var(--hair); border-radius:10px;
+    font-size:12.5px; font-weight:700; letter-spacing:.02em;
+  }
+  .slipband .dot{width:9px; height:9px; border-radius:50%; flex:none}
+  .slipband .sub{font-weight:500; color:var(--mut); font-size:11px; margin-left:auto; text-align:right}
+  .lrow{
+    display:flex; align-items:baseline; gap:8px; padding:6px 2px; font-size:12.5px;
+    border-bottom:1px solid var(--hair2);
+  }
+  .lrow:last-child{border-bottom:0}
+  .lrow .lw{color:var(--mut2); font-size:10.5px; flex:none; width:52px}
+  .lrow .ll{color:var(--ink); min-width:0; overflow-wrap:anywhere}
+  .lrow .ls{margin-left:auto; flex:none; font-size:11px; font-weight:700; letter-spacing:.03em; text-align:right}
+  .s-won{color:#4ad6a2} .s-lost{color:#e06c75} .s-live{color:#e8b44a}
+  .s-pre{color:var(--mut2); font-weight:500} .s-unk{color:#a99ae6; font-weight:500}
+  .livehead{display:flex; align-items:center; gap:10px; margin-top:14px}
+  .livehead .note{color:var(--mut2); font-size:10.5px}
+
   .loading{color:var(--mut); font-size:13px; display:flex; align-items:center; gap:10px; padding:18px 0}
   .spin{width:18px; height:18px; border:2.5px solid var(--hair); border-top-color:var(--accent); border-radius:50%; animation:sp .7s linear infinite; flex:none}
   @keyframes sp{to{transform:rotate(360deg)}}
@@ -97,9 +118,11 @@
   <div class="tabs">
     <button class="tab on" data-pane="board">Board</button>
     <button class="tab" data-pane="slips">Slips</button>
+    <button class="tab" data-pane="live">Live</button>
   </div>
   <section id="board" class="pane md on"></section>
   <section id="slips" class="pane md"></section>
+  <section id="live" class="pane"></section>
   <div class="foot">
     Rendered straight off <code>CheeseDagg/parlay@main</code> (BOARD.md &amp; TICKETS.md) — the refresh
     workflow's commit is the publish step, there is no other. Board self-refreshes 16:00 &amp; 21:00 UTC.
@@ -133,6 +156,62 @@ const P = {
     return P.esc(s)
       .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
       .replace(/`([^`]+)`/g, '<code>$1</code>');
+  },
+
+  /* ---- live grading (pure parts — selftest-parlay.js drives these) ------
+     The container that maintains this repo cannot reach any live-score host,
+     but the PHONE viewing this page can: statsapi.mlb.com and ESPN's site API
+     both serve Access-Control-Allow-Origin:*, so the browser grades the slips
+     itself. Sources of truth: TICKETS.md for the legs, statsapi for MLB
+     (linescore innings give the F5 splits), ESPN scoreboard for WNBA/CFL. */
+
+  /* TICKETS.md leg lines are "- [ ] Wed 8/5 6:36p — LAB — price *(notes)*".
+     Split on the spaced em-dash; notes ride with the price and never grade. */
+  parseSlips(md){
+    const slips = []; let cur = null;
+    for(const line of (md || '').split(/\r?\n/)){
+      const h = /^## (.+)$/.exec(line);
+      if(h){ cur = /^Slip /.test(h[1]) ? {title:h[1], legs:[]} : null; if(cur) slips.push(cur); continue; }
+      const cb = /^- \[( |x|X)\] (.+)$/.exec(line);
+      if(cb && cur){
+        const parts = cb[2].split(' — ');
+        const d = /(\d{1,2}\/\d{1,2})/.exec(parts[0] || '');
+        cur.legs.push({ when: (parts[0]||'').trim(), day: d ? d[1] : null,
+                        lab: (parts[1]||'').trim(), price: (parts[2]||'').trim(),
+                        done: cb[1].toLowerCase() === 'x' });
+      }
+    }
+    return slips;
+  },
+
+  /* Label vocabularies differ: the board says ARI/ATH/CWS, statsapi says
+     AZ/ATH/CWS (and once said OAK/CHW). Alias both directions. */
+  ALIAS: {ARI:['AZ'], CWS:['CHW'], ATH:['OAK']},
+  abEq(a, b){ if(a===b) return true; return (P.ALIAS[a]||[]).includes(b) || (P.ALIAS[b]||[]).includes(a); },
+
+  legKind(lab){
+    const m = /^([A-Z]{2,3})@([A-Z]{2,3}) (F5 )?(Under|Over) (\d+(?:\.5)?)/.exec(lab);
+    if(m) return {kind:'mlb', away:m[1], home:m[2], f5:!!m[3], side:m[4], line:+m[5]};
+    if(/New York Liberty/.test(lab))  return {kind:'espn', sport:'basketball/wnba', team:'Liberty'};
+    if(/Roughriders/.test(lab))       return {kind:'espn', sport:'football/cfl',   team:'Roughriders'};
+    return {kind:'other'};
+  },
+
+  f5sum(innings){
+    return (innings||[]).slice(0,5).reduce((s,i)=>
+      s + (((i.away||{}).runs)||0) + (((i.home||{}).runs)||0), 0);
+  },
+  /* First five are DONE at Final, past the 5th, or at "End" of the 5th.
+     Middle of the 5th is not done — the home half can still wreck an under. */
+  f5done(ls, isFinal){
+    const inn = (ls||{}).currentInning || 0;
+    return !!isFinal || inn > 5 || (inn === 5 && (ls||{}).inningState === 'End');
+  },
+  /* A total that already passed an Under is lost mid-game; an Under is only
+     WON when its window is complete. Overs mirror exactly. */
+  gradeTotal(sum, line, side, done){
+    if(side === 'Under') return sum > line ? 'lost' : (done ? 'won' : 'live');
+    return sum > line ? 'won' : (done ? 'lost' : 'live');
   },
 
   /* The exact subset BOARD.md and TICKETS.md are written in — headings, one
@@ -228,10 +307,120 @@ const P = {
     foot.textContent = 'fetched ' + new Date().toUTCString().replace('GMT', 'UTC');
   },
 
+  /* ---- live pane ---------------------------------------------------------- */
+  mdToISO(day){                       // "8/5" -> "2026-08-05" (viewer's year)
+    const m = /^(\d{1,2})\/(\d{1,2})$/.exec(day || ''); if(!m) return null;
+    const p = n => (n < 10 ? '0' : '') + n;
+    return new Date().getFullYear() + '-' + p(+m[1]) + '-' + p(+m[2]);
+  },
+
+  gradeMlb(k, game){
+    const st  = (((game.status||{}).abstractGameState) || '');
+    if(st === 'Preview') return {s:'pre', d:'not started'};
+    const ls = game.linescore || {}, fin = st === 'Final';
+    const t  = game.teams || {};
+    if(k.f5){
+      const sum = P.f5sum(ls.innings), done = P.f5done(ls, fin);
+      const v = P.gradeTotal(sum, k.line, k.side, done);
+      return {s:v, d: sum + ' thru 5' + (done ? '' : ' · ' + (ls.inningState||'') + ' ' + (ls.currentInning||'?'))};
+    }
+    const tot = (((t.away||{}).score)||0) + (((t.home||{}).score)||0);
+    const v = P.gradeTotal(tot, k.line, k.side, fin);
+    return {s:v, d: tot + ' runs' + (fin ? ' · F' : ' · ' + (ls.inningState||'') + ' ' + (ls.currentInning||'?'))};
+  },
+
+  gradeEspn(k, ev){
+    const comp = ((ev.competitions||[])[0]) || {}, cs = comp.competitors || [];
+    const st = (((ev.status||{}).type)||{});
+    const mine  = cs.find(c => (((c.team||{}).displayName)||'').includes(k.team));
+    const other = cs.find(c => c !== mine);
+    if(!mine) return {s:'unk', d:'team not found'};
+    const sc = (mine.score||'0') + '-' + ((other||{}).score||'0');
+    if(st.state === 'pre')  return {s:'pre', d:'not started'};
+    if(st.state === 'post') return {s: +mine.score > +((other||{}).score||0) ? 'won' : 'lost', d: sc + ' · F'};
+    return {s: 'live', d: sc + ' · ' + (st.shortDetail || st.detail || 'in progress')};
+  },
+
+  liveLoad(){
+    const pane = document.getElementById('live');
+    pane.innerHTML = '<div class="loading"><span class="spin"></span>Grading slips off statsapi / ESPN…</div>';
+    const bust = '?r=' + Date.now();
+    const today = new Date(); today.setHours(23,59,0,0);
+    fetch(P.RAW + 'TICKETS.md' + bust, {cache:'no-store'}).then(r => {
+      if(!r.ok) throw new Error('HTTP ' + r.status); return r.text();
+    }).then(md => {
+      const slips = P.parseSlips(md);
+      const legs = slips.flatMap(s => s.legs.map(l => ({...l, k: P.legKind(l.lab)})));
+      const wants = l => { const iso = P.mdToISO(l.day); return iso && new Date(iso + 'T00:00:00') <= today; };
+      const mlbDates  = [...new Set(legs.filter(l => l.k.kind==='mlb'  && !l.done && wants(l)).map(l => P.mdToISO(l.day)))];
+      const espnKeys  = [...new Set(legs.filter(l => l.k.kind==='espn' && !l.done && wants(l)).map(l => l.k.sport + '|' + P.mdToISO(l.day)))];
+      const S = {mlb:{}, espn:{}};
+      const jobs = mlbDates.map(d =>
+        fetch('https://statsapi.mlb.com/api/v1/schedule?sportId=1&hydrate=linescore,team&date=' + d, {cache:'no-store'})
+          .then(r => r.json()).then(j => { S.mlb[d] = ((j.dates||[])[0]||{}).games || []; })
+          .catch(() => { S.mlb[d] = null; })
+      ).concat(espnKeys.map(key => {
+        const [sport, d] = key.split('|');
+        return fetch('https://site.api.espn.com/apis/site/v2/sports/' + sport + '/scoreboard?dates=' + d.replace(/-/g,''), {cache:'no-store'})
+          .then(r => r.json()).then(j => { S.espn[key] = j.events || []; })
+          .catch(() => { S.espn[key] = null; });
+      }));
+      return Promise.all(jobs).then(() => ({slips, S}));
+    }).then(({slips, S}) => {
+      let html = '<div class="livehead"><span class="note">Graded on this phone, straight off statsapi (MLB, F5 splits) and ESPN (WNBA/CFL). '+
+                 'Checked ' + new Date().toLocaleTimeString() + ' · auto-refreshes every 60s.</span></div>';
+      for(const slip of slips){
+        let won=0, lost=0, live=0, pend=0, unk=0, rows='';
+        for(const l of slip.legs){
+          let g;
+          if(l.done){ g = {s:'won', d:'recorded'}; }
+          else if(!P.mdToISO(l.day) || new Date(P.mdToISO(l.day)+'T00:00:00') > today){ g = {s:'pre', d:'settles ' + (l.when.split(' ')[0]||'later')}; }
+          else if(l.k.kind === 'mlb'){
+            const games = S.mlb[P.mdToISO(l.day)];
+            if(games === null) g = {s:'unk', d:'statsapi unreachable'};
+            else{
+              const game = (games||[]).find(gm => {
+                const ab = s => ((((gm.teams||{})[s]||{}).team)||{}).abbreviation || '';
+                return P.abEq(ab('away'), l.k.away) && P.abEq(ab('home'), l.k.home);
+              });
+              g = game ? P.gradeMlb(l.k, game) : {s:'unk', d:'game not found for ' + l.k.away + '@' + l.k.home};
+            }
+          }
+          else if(l.k.kind === 'espn'){
+            const evs = S.espn[l.k.sport + '|' + P.mdToISO(l.day)];
+            if(evs === null) g = {s:'unk', d:'ESPN unreachable'};
+            else{
+              const ev = (evs||[]).find(e => (e.name||'').includes(l.k.team));
+              g = ev ? P.gradeEspn(l.k, ev) : {s:'unk', d:'not on ESPN board'};
+            }
+          }
+          else g = {s:'pre', d:'no live wire (' + l.when + ')'};
+          if(g.s==='won') won++; else if(g.s==='lost') lost++; else if(g.s==='live') live++;
+          else if(g.s==='unk') unk++; else pend++;
+          const cls = {won:'s-won', lost:'s-lost', live:'s-live', pre:'s-pre', unk:'s-unk'}[g.s];
+          const txt = {won:'WON', lost:'LOST', live:'LIVE', pre:'—', unk:'?'}[g.s];
+          rows += '<div class="lrow"><span class="lw">' + P.esc(l.when.replace(/^\w{3} /,'')) + '</span>' +
+                  '<span class="ll">' + P.esc(l.lab) + '</span>' +
+                  '<span class="ls ' + cls + '">' + txt + ' <span style="font-weight:500">' + P.esc(g.d||'') + '</span></span></div>';
+        }
+        const alive = lost === 0;
+        const bd = alive ? (unk ? '#a99ae6' : '#4ad6a2') : '#e06c75';
+        const verdict = alive ? (unk ? 'ALIVE as far as sources show' : 'ALIVE') : 'DEAD — ' + lost + ' leg' + (lost>1?'s':'') + ' lost';
+        html += '<div class="slipband"><span class="dot" style="background:' + bd + '"></span>' +
+                P.esc(slip.title) + ' — ' + verdict +
+                '<span class="sub">' + won + ' won · ' + live + ' live · ' + pend + ' pending' + (unk ? ' · ' + unk + ' unreadable' : '') + '</span></div>' + rows;
+      }
+      html += '<div class="foot">A leg the sources cannot read counts as UNKNOWN, never as won or lost. The FD app remains the official grader.</div>';
+      pane.innerHTML = html;
+    }).catch(e => { pane.innerHTML = P.errBox('TICKETS.md', e); });
+  },
+
   show(k){
-    if(k !== 'slips') k = 'board';
+    if(k !== 'slips' && k !== 'live') k = 'board';
     document.querySelectorAll('.tab').forEach(el => el.classList.toggle('on', el.dataset.pane === k));
     document.querySelectorAll('.pane').forEach(el => el.classList.toggle('on', el.id === k));
+    clearInterval(P._lt);
+    if(k === 'live'){ P.liveLoad(); P._lt = setInterval(P.liveLoad, 60000); }
   },
 
   init(){
@@ -240,7 +429,11 @@ const P = {
       b.onclick = () => { location.hash = b.dataset.pane; P.show(b.dataset.pane); };
     });
     window.addEventListener('hashchange', () => P.show((location.hash || '').replace('#','')));
-    document.getElementById('refresh').onclick = () => P.load();
+    document.getElementById('refresh').onclick = () => {
+      P.load();
+      const on = document.querySelector('.tab.on');
+      if(on && on.dataset.pane === 'live') P.liveLoad();
+    };
     P.show((location.hash || '').replace('#',''));
     P.load();
   },

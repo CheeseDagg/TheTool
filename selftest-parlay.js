@@ -55,5 +55,49 @@ chk(!/<img/.test(P.render('hello <img src=x onerror=alert(1)> there')),
 // unclosed fence: a refresh that died mid-write must still render, not vanish
 chk(/<pre>/.test(P.render('```\nhalf a block')), 'an unclosed fence still renders as a block');
 
+// --- the live grader: pure parts -------------------------------------------
+const TICK = [
+  '# Live slips', '',
+  '## Slip A — 20-leg · whatever', '',
+  '- [ ] Wed 8/5 7:00p — New York Liberty ML (WNBA) — -355 *(shared with Slip B)*',
+  '- [ ] Sat 8/8 — Callum Walsh (boxing) — not on the board pulls · ≈0.81',
+  '- [x] Legs 1–13 — ALL WON, settled through Tue 8/4', '',
+  '## Slip B — 17-leg · placed @ +4140', '',
+  '- [ ] Wed 8/5 7:11p — CWS@BOS F5 Under 6.5 — -340 *(printed a tick under the -350 floor)*',
+  '- [ ] Fri 8/7 9:00p — Saskatchewan Roughriders ML — -430',
+  '## Dead this week', '',
+  '- HR trio, 100% boost — lost Tue 8/4.',
+].join('\n');
+const slips=P.parseSlips(TICK);
+chk(slips.length===2, `two "## Slip" sections parse, Dead-this-week does not (${slips.length})`);
+chk(slips[0].legs.length===3 && slips[1].legs.length===2, 'checkbox legs land under the right slip');
+chk(slips[0].legs[0].lab==='New York Liberty ML (WNBA)' && slips[0].legs[0].day==='8/5',
+    'the em-dash split survives trailing notes');
+chk(slips[0].legs[2].done===true, 'a ticked box parses as done');
+
+chk(P.legKind('CWS@BOS F5 Under 6.5').f5===true && P.legKind('CWS@BOS F5 Under 6.5').line===6.5,
+    'F5 alternate totals classify with their line');
+chk(P.legKind('ATH@CIN Under 13.5').f5===false, 'full-game totals are not F5');
+chk(P.legKind('New York Liberty ML (WNBA)').sport==='basketball/wnba', 'Liberty routes to ESPN WNBA');
+chk(P.legKind('Saskatchewan Roughriders ML').sport==='football/cfl', 'Roughriders route to ESPN CFL');
+chk(P.legKind('Callum Walsh (boxing)').kind==='other', 'boxing has no live wire and says so');
+
+chk(P.abEq('ARI','AZ') && P.abEq('AZ','ARI') && P.abEq('ATH','OAK') && !P.abEq('ARI','ATL'),
+    'board/statsapi abbreviation aliases match both directions and nothing else');
+
+const INN=[{away:{runs:1},home:{runs:0}},{away:{runs:0},home:{runs:2}},{away:{runs:0},home:{runs:0}},
+           {away:{runs:1},home:{}},{away:{runs:0},home:{runs:1}},{away:{runs:9},home:{runs:9}}];
+chk(P.f5sum(INN)===5, `f5sum takes exactly the first five innings and tolerates a missing half (${P.f5sum(INN)})`);
+chk(P.f5done({currentInning:5,inningState:'Middle'},false)===false,
+    'middle of the 5th is NOT done — the home half can still lose an under');
+chk(P.f5done({currentInning:5,inningState:'End'},false)===true, 'end of the 5th settles F5');
+chk(P.f5done({currentInning:3},true)===true, 'a Final settles F5 regardless of innings');
+
+chk(P.gradeTotal(7,6.5,'Under',false)==='lost', 'an under passed mid-game is lost, no waiting');
+chk(P.gradeTotal(5,6.5,'Under',false)==='live', 'an under still below the line mid-game is live');
+chk(P.gradeTotal(5,6.5,'Under',true)==='won',  'an under below the line at the horn is won');
+chk(P.gradeTotal(7,6.5,'Over',false)==='won',  'an over passed mid-game is already won');
+chk(P.gradeTotal(5,6.5,'Over',true)==='lost',  'an over short at the horn is lost');
+
 console.log(`\n${pass}/${pass+fail} checks pass`);
 process.exit(fail?1:0);
